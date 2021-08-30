@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "debian-cloud-image-finder.fullname" . }}
+  labels:
+    {{- include "debian-cloud-image-finder.labels" . | nindent 4 }}
+spec:
+{{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+{{- end }}
+  selector:
+    matchLabels:
+      {{- include "debian-cloud-image-finder.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: {{ .Values.deploymentStrategy }}
+  {{- if ne .Values.deploymentStrategy "RollingUpdate" }}
+    rollingUpdate: null
+  {{- end }}
+  template:
+    metadata:
+    {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      labels:
+        {{- include "debian-cloud-image-finder.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "debian-cloud-image-finder.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # initContainers:
+      # - name: check-db-ready
+      #   image: postgres:9.6.5
+      #   command: ['sh', '-c',
+      #     'until pg_isready -h {{ template "debian-cloud-image-finder.database.host" . }} -p 5432;
+      #     do echo waiting for database; sleep 2; done;']
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          env:
+            - name: FLASK_ENV
+              value: {{ .Values.app.enviroment }}
+            - name: FLASK_APP
+              value: debian_image_finder:create_app
+            - name: DYNACONF_HOST
+              value: {{ .Values.app.host }}
+            - name: DYNACONF_GITLAB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "debian-cloud-image-finder.fullname" . }}
+                  key: gitlabClientId
+            - name: DYNACONF_GITLAB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "debian-cloud-image-finder.fullname" . }}
+                  key: gitlabClientSecret
+            - name: DYNACONF_VERIFY_TLS_CERTIFICATES
+              value: {{ .Values.app.verifyTlsCertificates | quote }}
+            - name: DYNACONF_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "debian-cloud-image-finder.fullname" . }}
+                  key: secretKey
+            - name: CMD_DB_PASSWORD
+              {{- if .Values.postgresql.install }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ template "debian-cloud-image-finder.postgresql.fullname" . }}
+                  key: postgresql-password
+              {{- else }}
+              value: {{ .Values.postgresql.postgresPassword }}
+              {{- end }}
+            - name: DYNACONF_SQLALCHEMY_DATABASE_URI
+              value: "postgresql://{{ .Values.postgresql.postgresqlUsername }}:$(CMD_DB_PASSWORD)@{{ template "debian-cloud-image-finder.database.host" . }}:5432/{{ .Values.postgresql.postgresqlDatabase }}"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

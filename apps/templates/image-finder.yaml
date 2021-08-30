@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: image-finder
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  destination:
+    namespace: image-finder
+    server: {{ .Values.spec.destination.server }}
+  project: default
+  source:
+    repoURL: https://github.com/arthurbdiniz/microk8s
+    path: debian-cloud-image-finder
+    helm:
+      parameters:
+        - name: fullnameOverride
+          value: image-finder
+        - name: image.pullPolicy
+          value: "Always"
+        - name: ingress.enabled
+          value: "true"
+        - name: ingress.annotations.kubernetes\.io/ingress\.class
+          value: "public"
+        - name: ingress.annotations.nginx\.ingress\.kubernetes\.io/rewrite-target
+          value: "/"
+        - name: ingress.annotations.cert-manager\.io/cluster-issuer
+          value: "letsencrypt-prod"
+        - name: ingress.hosts[0].host
+          value: "finder.arthurbdiniz.com"
+        - name: ingress.hosts[0].paths[0]
+          value: "/"
+        - name: ingress.tls[0].hosts[0]
+          value: "finder.arthurbdiniz.com"
+        - name: ingress.tls[0].secretName
+          value: "image-finder-tls-acme"
+        - name: app.host
+          value: "https://finder.arthurbdiniz.com"
+        - name: app.gitlabClientId
+          value: 14697859e6a96139e44b2d28530078a12c6fdda78ee6bada9f9ef1e5d17362ac
+        - name: app.gitlabClientSecret
+          value: c690a759af324341ca091aa218b1e4873a84cd2d18838fb5a82dbecdee7ea310
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
